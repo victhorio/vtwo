@@ -106,6 +106,8 @@ func (v *VTwo) SendMessageStreaming(history []openai.ChatCompletionMessageParamU
 	}
 	stream := v.client.Chat.Completions.NewStreaming(ctx, params)
 
+	printCtx := &printModelCtx{}
+
 	acc := openai.ChatCompletionAccumulator{}
 	fmt.Printf("\n")
 	for stream.Next() {
@@ -117,7 +119,7 @@ func (v *VTwo) SendMessageStreaming(history []openai.ChatCompletionMessageParamU
 		} else if refusal, ok := acc.JustFinishedRefusal(); ok {
 			fmt.Printf("\n[Model refused to answer]\n\n%s\n", refusal)
 		} else if len(chunk.Choices) > 0 && len(chunk.Choices[0].Delta.Content) > 0 {
-			fmt.Printf("%s", chunk.Choices[0].Delta.Content)
+			printModelContent(printCtx, chunk.Choices[0].Delta.Content)
 		}
 	}
 
@@ -127,6 +129,42 @@ func (v *VTwo) SendMessageStreaming(history []openai.ChatCompletionMessageParamU
 
 	v.UpdateUsage(acc.Usage.PromptTokens, acc.Usage.CompletionTokens)
 	return acc.Choices[0].Message.Content
+}
+
+type printModelCtx struct {
+	boldPrefix bool
+	bold       bool
+}
+
+func printModelContent(ctxt *printModelCtx, content string) {
+	// for now this is pretty much a regular printing job, except that once we
+	// hit a "**" we replace it with a "\x1b[1;32m" (bold and green) until we
+	// get another "**" and then we replace it with "\x1b[22;39m" (reset bold,
+	// default color)
+
+	for _, ch := range content {
+		if ch == '*' {
+			if ctxt.boldPrefix {
+				ctxt.boldPrefix = false
+				ctxt.bold = !ctxt.bold
+				if ctxt.bold {
+					fmt.Printf("\x1b[1;32m")
+				} else {
+					fmt.Printf("\x1b[22;39m")
+				}
+			} else {
+				ctxt.boldPrefix = true
+			}
+		} else {
+			if ctxt.boldPrefix {
+				// we were waiting for a "**" but got something else, wo we owe
+				// an asterisk to stdout
+				ctxt.boldPrefix = false
+				fmt.Print("*")
+			}
+			fmt.Printf("%c", ch)
+		}
+	}
 }
 
 func (v *VTwo) UpdateUsage(promptTokens, completionTokens int64) {
