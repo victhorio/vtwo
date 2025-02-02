@@ -11,14 +11,14 @@ import (
 )
 
 func main() {
-	key := os.Getenv("OPENAI_API_KEY")
-	if key == "" {
-		panic("OPENAI_API_KEY not defined")
-	}
-	app := vtwo.NewApp(key)
+	app := vtwo.NewApp()
+	repl(app)
+}
+
+func repl(app *vtwo.VTwo) {
+	reader := bufio.NewReader(os.Stdin)
 	history := vtwo.NewChatHistory()
 
-	reader := bufio.NewReader(os.Stdin)
 	for {
 		fmt.Print("> ")
 		input, err := reader.ReadString('\n')
@@ -40,5 +40,5 @@ func main() {
 		fmt.Printf("\n[$%.2f] V2: %s\n\n", app.GetCost(), resp)
 	}
 
-	fmt.Printf("Total cost for this session was %.2f.", app.GetCost())
+	fmt.Printf("Total cost for this session was %.2f.\n", app.GetCost())
 }

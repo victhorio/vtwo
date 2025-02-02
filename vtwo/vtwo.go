@@ -3,6 +3,7 @@ package vtwo
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"sync"
 	"time"
@@ -11,30 +12,45 @@ import (
 	"github.com/openai/openai-go/option"
 )
 
-var costMap = map[string]float64{
-	openai.ChatModelGPT4oMini: 0.15 / 1_000_000,
-	openai.ChatModelGPT4o:     2.5 / 1_000_000,
-	openai.ChatModelO3Mini:    1.1 / 1_000_000,
-}
-
-const model = openai.ChatModelGPT4oMini
-const completionToPromptCostRatio = 4.0
-
 // VTwo holds contextual information needed between function calls
 type VTwo struct {
 	client  *openai.Client
 	rootCtx context.Context
+
+	model                     string
+	baseCost, outputCostRatio float64
 
 	usageMutex                     sync.Mutex
 	promptTokens, completionTokens int64
 }
 
 // NewApp creates a new VTwo instance
-func NewApp(apiKey string) *VTwo {
-	const baseUrl = "https://api.openai.com/v1/"
+func NewApp() *VTwo {
+	userConfig := loadConfig()
+
+	// don't like that this is here, but also don't want to keep this in the config
+	// at least the output to input token ratio is constant per provider, so works well enough
+	// don't know yet though
+	// TODO: think about this?
+	var costMap = map[string]float64{
+		openai.ChatModelGPT4oMini: 0.15 / 1_000_000,
+		openai.ChatModelGPT4o:     2.5 / 1_000_000,
+		openai.ChatModelO3Mini:    1.1 / 1_000_000,
+	}
+
+	baseCost, ok := costMap[userConfig.API.Model]
+	if !ok {
+		log.Printf("WARNING: Unknown cost for model `%s`, assuming $2.50/1M prompt tokens.", userConfig.API.Model)
+		baseCost = 2.5 / 1_000_000
+	}
+
 	return &VTwo{
-		client:  newClient(baseUrl, apiKey),
+		client:  newClient(userConfig.API.BaseUrl, userConfig.API.ApiKey),
 		rootCtx: context.Background(),
+
+		model:           userConfig.API.Model,
+		baseCost:        baseCost,
+		outputCostRatio: userConfig.API.OutputCostRatio,
 	}
 }
 
@@ -61,7 +77,7 @@ func (v *VTwo) SendMessage(message string, history []openai.ChatCompletionMessag
 	chatCompletion, err := v.client.Chat.Completions.New(
 		ctx,
 		openai.ChatCompletionNewParams{
-			Model:    openai.F(openai.ChatModelGPT4oMini),
+			Model:    openai.F(v.model),
 			Messages: openai.F(newHistory),
 		},
 		option.WithRequestTimeout(1*time.Minute),
@@ -89,8 +105,7 @@ func (v *VTwo) GetCost() float64 {
 	v.usageMutex.Lock()
 	defer v.usageMutex.Unlock()
 
-	baseCost := costMap[model]
-	promptCost := float64(v.promptTokens) * baseCost
-	completionCost := float64(v.completionTokens) * baseCost * completionToPromptCostRatio
+	promptCost := float64(v.promptTokens) * v.baseCost
+	completionCost := float64(v.completionTokens) * v.baseCost * v.outputCostRatio
 	return promptCost + completionCost
 }
