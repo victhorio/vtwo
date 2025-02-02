@@ -17,6 +17,7 @@ type APIConfig struct {
 	ApiKey          string  `json:"api_key"`
 	Model           string  `json:"model"`
 	OutputCostRatio float64 `json:"output_cost_ratio"`
+	Timeout         int64   `json:"timeout"`
 }
 
 type NotesConfig struct {

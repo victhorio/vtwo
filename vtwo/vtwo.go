@@ -16,6 +16,7 @@ import (
 type VTwo struct {
 	client  *openai.Client
 	rootCtx context.Context
+	timeout time.Duration
 
 	model                     string
 	baseCost, outputCostRatio float64
@@ -47,6 +48,7 @@ func NewApp() *VTwo {
 	return &VTwo{
 		client:  newClient(userConfig.API.BaseUrl, userConfig.API.ApiKey),
 		rootCtx: context.Background(),
+		timeout: time.Duration(userConfig.API.Timeout) * time.Second,
 
 		model:           userConfig.API.Model,
 		baseCost:        baseCost,
@@ -67,30 +69,64 @@ func NewChatHistory() []openai.ChatCompletionMessageParamUnion {
 	return []openai.ChatCompletionMessageParamUnion{}
 }
 
-// SendMessage sends a message to the OpenAI API with a given history and returns
-// the response text as well as the updated history.
-func (v *VTwo) SendMessage(message string, history []openai.ChatCompletionMessageParamUnion) (string, []openai.ChatCompletionMessageParamUnion, error) {
-	ctx, cancel := context.WithTimeout(v.rootCtx, 5*time.Minute)
+// SendMessage sends a message to the API and returns the response text, given a history with an
+// already appended user message at the end.
+func (v *VTwo) SendMessage(history []openai.ChatCompletionMessageParamUnion) (string, error) {
+	ctx, cancel := context.WithTimeout(v.rootCtx, v.timeout)
 	defer cancel()
 
-	newHistory := append(history, openai.UserMessage(message))
 	chatCompletion, err := v.client.Chat.Completions.New(
 		ctx,
 		openai.ChatCompletionNewParams{
 			Model:    openai.F(v.model),
-			Messages: openai.F(newHistory),
+			Messages: openai.F(history),
 		},
-		option.WithRequestTimeout(1*time.Minute),
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error sending message: %v\n", err)
-		return "", history, err
+		return "", err
 	}
 
 	responseText := chatCompletion.Choices[0].Message.Content
-	newHistory = append(newHistory, openai.AssistantMessage(responseText))
+	return responseText, nil
+}
 
-	return responseText, newHistory, nil
+// SendMessageStreaming is used for user interaction for immediate feedback. Given a history
+// with an already appended user message at the end, it sends a message to the API and receives
+// the response in chunks, immediately printing each chunk to os.Stdout. It also returns the
+// complete response as a string.
+func (v *VTwo) SendMessageStreaming(history []openai.ChatCompletionMessageParamUnion) string {
+	ctx, cancel := context.WithTimeout(v.rootCtx, v.timeout)
+	defer cancel()
+
+	params := openai.ChatCompletionNewParams{
+		Messages:      openai.F(history),
+		Model:         openai.F(v.model),
+		StreamOptions: openai.F(openai.ChatCompletionStreamOptionsParam{IncludeUsage: openai.F(true)}),
+	}
+	stream := v.client.Chat.Completions.NewStreaming(ctx, params)
+
+	acc := openai.ChatCompletionAccumulator{}
+	fmt.Printf("\n")
+	for stream.Next() {
+		chunk := stream.Current()
+		acc.AddChunk(chunk)
+
+		if _, ok := acc.JustFinishedContent(); ok {
+			fmt.Printf("\n\n")
+		} else if refusal, ok := acc.JustFinishedRefusal(); ok {
+			fmt.Printf("\n[Model refused to answer]\n\n%s\n", refusal)
+		} else if len(chunk.Choices) > 0 && len(chunk.Choices[0].Delta.Content) > 0 {
+			fmt.Printf("%s", chunk.Choices[0].Delta.Content)
+		}
+	}
+
+	if err := stream.Err(); err != nil {
+		log.Fatalf("Error on model stream response: %s\n", err.Error())
+	}
+
+	v.UpdateUsage(acc.Usage.PromptTokens, acc.Usage.CompletionTokens)
+	return acc.Choices[0].Message.Content
 }
 
 func (v *VTwo) UpdateUsage(promptTokens, completionTokens int64) {

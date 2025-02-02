@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/openai/openai-go"
 	"github.com/victhorio/vtwo/vtwo"
 )
 
@@ -20,7 +21,7 @@ func repl(app *vtwo.VTwo) {
 	history := vtwo.NewChatHistory()
 
 	for {
-		fmt.Print("> ")
+		fmt.Printf("[$%.2f] > ", app.GetCost())
 		input, err := reader.ReadString('\n')
 		if err != nil {
 			log.Fatal("Error reading input: ", err)
@@ -31,14 +32,10 @@ func repl(app *vtwo.VTwo) {
 			break
 		}
 
-		var resp string
-		resp, history, err = app.SendMessage(input, history)
-		if err != nil {
-			log.Fatal("Error getting model response: ", err)
-		}
-
-		fmt.Printf("\n[$%.2f] V2: %s\n\n", app.GetCost(), resp)
+		history = append(history, openai.UserMessage(input))
+		response := app.SendMessageStreaming(history)
+		history = append(history, openai.AssistantMessage(response))
 	}
 
-	fmt.Printf("Total cost for this session was %.2f.\n", app.GetCost())
+	fmt.Printf("\nTotal cost for this session was $%.2f.\n", app.GetCost())
 }
