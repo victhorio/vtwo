@@ -23,6 +23,8 @@ type VTwo struct {
 
 	usageMutex                     sync.Mutex
 	promptTokens, completionTokens int64
+
+	rootDir string
 }
 
 // NewApp creates a new VTwo instance
@@ -53,6 +55,8 @@ func NewApp() *VTwo {
 		model:           userConfig.API.Model,
 		baseCost:        baseCost,
 		outputCostRatio: userConfig.API.OutputCostRatio,
+
+		rootDir: userConfig.Notes.BasePath,
 	}
 }
 

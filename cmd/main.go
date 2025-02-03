@@ -13,7 +13,8 @@ import (
 
 func main() {
 	app := vtwo.NewApp()
-	repl(app)
+	// repl(app)
+	app.TrackFiles()
 }
 
 func repl(app *vtwo.VTwo) {
