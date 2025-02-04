@@ -12,9 +12,11 @@ import (
 )
 
 func main() {
-	app := vtwo.NewApp()
+	// app := vtwo.NewApp()
 	// repl(app)
-	app.TrackFiles()
+	// app.TrackFiles()
+
+	vtwo.SqliteDemo()
 }
 
 func repl(app *vtwo.VTwo) {

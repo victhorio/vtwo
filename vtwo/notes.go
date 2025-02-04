@@ -9,7 +9,8 @@ import (
 	"time"
 )
 
-type chunk struct {
+type Chunk struct {
+	file    string
 	date    time.Time
 	title   string
 	content string
@@ -38,7 +39,8 @@ func (app *VTwo) TrackFiles() {
 			log.Fatal(err)
 		}
 
-		chunks := breakDownNote(string(noteContent), date)
+		fileName := filepath.Join("Daily", note.Name())
+		chunks := breakDownNote(string(noteContent), date, fileName)
 		for _, chunk := range chunks {
 			headerLine := fmt.Sprintf("------- %s: %s -------\n", chunk.date.Format("2006-01-02"), chunk.title)
 			footerLine := strings.Repeat("-", len(headerLine))
@@ -50,11 +52,11 @@ func (app *VTwo) TrackFiles() {
 
 }
 
-func breakDownNote(noteContent string, date time.Time) []chunk {
+func breakDownNote(noteContent string, date time.Time, fileName string) []Chunk {
 	// we can assume that noteContent is a valid markdown file, with multiple h3 headers
 	// indicated by three hashes separating each chunk
 
-	chunks := []chunk{}
+	chunks := []Chunk{}
 
 	lines := strings.Split(noteContent, "\n")
 
@@ -65,7 +67,8 @@ func breakDownNote(noteContent string, date time.Time) []chunk {
 			// make sure we guard against the very first header
 			if startLineNum >= 0 {
 				endLineNum := lineNum - 1
-				chunks = append(chunks, chunk{
+				chunks = append(chunks, Chunk{
+					file:    fileName,
 					date:    date,
 					title:   currentTitle,
 					content: strings.TrimSpace(strings.Join(lines[startLineNum:endLineNum], "\n")),
